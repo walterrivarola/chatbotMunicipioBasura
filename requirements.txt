@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+openai
+python-dotenv  # Para manejar claves de API de forma segura
+python-multipart # Para manejar uploads de imágenes
