@@ -1,90 +1,58 @@
 import streamlit as st
-import requests
-import time
-import re
-#from dotenv import load_dotenv
-#import os
+from session.manager import init_session_state, check_inactivity
+from components.chat_interface import show_chat_interface
+from components.reclamo_form import show_reclamo_form
+from utils.helpers import extraer_cedula
+from api.client import enviar_mensaje
 
-# Cargar variables de entorno
-#load_dotenv()
-
-# Configurar la URL del backend (FastAPI)
-BACKEND_URL = 'http://172.30.128.90:8000'
-
-# Titulo de la aplicación
+# Configuración inicial
 st.title("Chatbot Municipal - Gestión de Basura")
+init_session_state()
+check_inactivity()
 
-# Inicializar el estado de la sesión usando notación de diccionario para evitar conflictos
-if "conversacion" not in st.session_state or not isinstance(st.session_state["conversacion"], list):
-    st.session_state["conversacion"] = []
+# Componente principal de chat
+show_chat_interface()
 
-if "cedula" not in st.session_state:
-    st.session_state["cedula"] = None
+def handle_message_submission(mensaje: str):
+    """Maneja el envío de mensajes regulares"""
+    if "reclamo" in mensaje or "queja" in mensaje:
+        handle_reclamo_intent(mensaje)
+    else:
+        handle_normal_message(mensaje)
 
-if "ultima_actividad" not in st.session_state:
-    st.session_state.ultima_actividad = time.time()
-
-# Control de inactividad: si han pasado más de 180 segundos, reinicia la sesión.
-if time.time() - st.session_state["ultima_actividad"] > 180:
-    st.session_state["conversacion"] = []
-    st.session_state["cedula"] = None
-    st.write("Conversación reiniciada. Empiece uno nuevo")
-st.session_state["ultima_actividad"] = time.time()
-
-st.write("### Conversación con el Chatbot")
-
-# Mostrar la conversación almacenada en el estado de la sesión
-for msg in st.session_state.conversacion:
-    st.write(f"**Tú:** {msg['usuario']}")
-    st.write(f"**Chatbot:** {msg['bot']}")
-
-# Entrada de texto del usuario
-mensaje_usuario = st.text_input("Escribe tu mensaje:", key="input_usuario")
-
-def extraer_cedula_text(texto):
-    coincidencias = re.findall(r'\b\d{5,10}\b', texto)
-    return coincidencias[0] if coincidencias else None
-
-# Actualizar la cédula si no se ha guardado y el mensaje contiene un número.
-if not st.session_state["cedula"] and mensaje_usuario:
-    posible_cedula = extraer_cedula_text(mensaje_usuario)
-    if posible_cedula:
-        st.session_state["cedula"] = int(posible_cedula)
-        #st.success(f"Cedula {posible_cedula} detectada y guardada")
-
-# Funcion para enviar mensajes al backend
-def enviar_mensaje(mensaje: str):
-    payload = {"mensaje": mensaje}
-    if st.session_state.get("cedula"):
-        payload["cedula"] = st.session_state["cedula"]
-    if st.session_state.get("token"):
-        payload["token"] = st.session_state["token"]
-    try:
-        response = requests.post(f"{BACKEND_URL}/chat", json=payload)
-        if response.status_code == 200:
-            # Guarda (o actualiza) el token recibido en la respuesta
-            data = response.json()
-            st.session_state["token"] = data.get("token")
-            return data["respuesta"]
-        else:
-            return "Error al comunicarse con el backend."
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-# Botón para enviar mensaje
-if st.button("Enviar"):
-    if mensaje_usuario.strip(): # Verificar que el mensaje no esté vacío
-        #Enviar mensaje al backend y obtener respuesta
-        respuesta_bot = enviar_mensaje(mensaje_usuario.strip())
-        
-        # Guardar la conversación en el estado de la sesión
+def handle_reclamo_intent(mensaje: str):
+    """Maneja la intención de hacer reclamos"""
+    if not st.session_state.cedula:
+        respuesta = "📝 Para procesar tu reclamo necesitamos verificar tu identidad. Por favor, proporcióname tu número de cédula."
         st.session_state.conversacion.append({
-            "usuario": mensaje_usuario.strip(),
-            "bot": respuesta_bot
+            "usuario": mensaje,
+            "bot": respuesta
         })
+    else:
+        st.session_state.modo_reclamo = True
         
-        # Limpiar la entrada de texto
-        #st.session_state.input_usuario = ""
+    st.rerun()
 
-        # Forzar la actualización de la interfaz
-        st.rerun()
+def handle_normal_message(mensaje: str):
+    """Procesa mensajes no relacionados con reclamos"""
+    respuesta = enviar_mensaje(mensaje)
+    st.session_state.conversacion.append({
+        "usuario": mensaje,
+        "bot": respuesta
+    })
+    st.rerun()
+
+# Lógica de flujo principal
+if st.session_state.modo_reclamo:
+    show_reclamo_form()
+else:
+    # Manejo de mensajes normales
+    mensaje_usuario = st.text_input("Escribe tu mensaje:", key="input_usuario")
+    
+    # Detección de cédula
+    if not st.session_state.cedula and mensaje_usuario:
+        if cedula := extraer_cedula(mensaje_usuario):
+            st.session_state.cedula = cedula
+    
+    if st.button("Enviar") and mensaje_usuario.strip():
+        handle_message_submission(mensaje_usuario.strip().lower())
