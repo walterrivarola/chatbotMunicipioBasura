@@ -4,37 +4,17 @@ from app.services.database import agregar_cliente, agregar_reclamo, obtener_clie
 from app.models.schemas import Cliente, Reclamo
 from app.core.utils import validar_cedula, guardar_foto, extraer_cedula
 from app.services import session_manager
-import logging
 from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
-#import time
-#import uuid
+from typing import Optional
+
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # O el nivel que prefieras
-
-
-# Tiempo de expiración para el token (por ejemplo, 5 minutos)
-#TOKEN_EXPIRATION = 300  # en segundos
-
-# Diccionario global para almacenar el contexto de cada conversación
-# La estructura es: { token: { "context": List[Dict], "last_active": timestamp, "cedula": int (opcional) } }
-#conversation_contexts: Dict[str, Dict[str, Any]] = {}
 
 # Definir un modelo Pydantic para el cuerpo de la solicitud
 class MensajeRequest(BaseModel):
     mensaje: str
     cedula: Optional[int] = None
     token: Optional[str] = None
-
-# Elimina los tokens que han expirado.
-#def cleanup_expired_tokens():
-    
-#    now = time.time()
-#    expired = [token for token, data in conversation_contexts.items() if now - data["last_active"] > TOKEN_EXPIRATION]
-#    for token in expired:
-#        del conversation_contexts[token]
 
 # FUNCIONES POST
 @router.post("/chat")
@@ -88,17 +68,6 @@ async def chat(solicitud: MensajeRequest):
             if "nombre" not in context or context["nombre"] is None:
                 context["awaiting"] = "nombre"
                 return {"respuesta": "No encuentro tu cédula en el sistema. ¿Cuál es tu nombre completo?", "token": token}
-            # Si ya tenemos el nombre, pedimos la dirección
-            #if "direccion" not in context or context["direccion"] is None:
-            #    context["awaiting"] = "direccion"
-            #    return {"respuesta": f"Gracias, {context['nombre']}. Ahora dime tu dirección.", "token": token}
-
-            # Si ya tenemos todos los datos, registramos al usuario en la BD
-            #nuevo_cliente = Cliente(cedula=cedula_actual, nombre=context["nombre"], direccion=context["direccion"])
-            #agregar_cliente(nuevo_cliente)
-
-            # Confirmamos que se registró exitosamente
-            #return {"respuesta": f"¡Listo {context['nombre']}! Te he registrado en el sistema con la cédula {cedula_actual}. ¿En qué puedo ayudarte ahora?", "token": token}
         else:
             cliente = obtener_cliente_por_cedula_gpt(context["cedula"])
 
@@ -122,43 +91,32 @@ async def chat(solicitud: MensajeRequest):
     return {"respuesta": respuesta.content, "token": token}
 
 
-@router.post("/chat-funcional")
-async def chat(mensaje: str):
-    # Extraer la cédula del mensaje
-    cedula = extraer_cedula(mensaje)
-    
-    # Verificar si el mensaje contiene una cédula
-    if cedula:
-        if not verificar_cedula_gpt(cedula):
-            return {"respuesta": "Lo siento, no estoy encontrando tu número de cédula en el sistema.¿Lo escribiste bien?"}
-        cliente = obtener_cliente_por_cedula_gpt(cedula)
-        contexto = f"El cliente {cliente['nombre']} está realizando una solicitud."
-        respuesta = generar_respuesta_gpt(mensaje, contexto)
-    else:
-        respuesta = generar_respuesta_gpt(mensaje)
-    return {"respuesta": respuesta}
+@router.post("/registrar-reclamo")
+async def hacer_reclamo(cedula: int = Form(...),ubicacion: str = Form(...),foto: UploadFile = File(...)):
 
-@router.post("/pagar")
-async def pagar_servicio(cedula: int):
-    if not validar_cedula(cedula):
-        raise HTTPException(status_code=400, detail="Cédula inválida. Debe ser un número con al menos 5 dígitos.")
-    return {"mensaje": f"Pago procesado para la cedula {cedula}"}
-
-
-
-@router.post("/guardar-reclamo")
-async def hacer_reclamo(cedula: int, foto: UploadFile = File(...), ubicacion: str = Form(...)):
     if not validar_cedula(cedula):
         raise HTTPException(status_code=400, detail="Cédula inválida. Debe ser un número con al menos 5 dígitos.")
     try:
         ruta_imagen = guardar_foto(foto)
-        logger.debug(f"Imagen guardada en: {ruta_imagen}")
-        print(f"Cédula: {cedula}, Ubicación: {ubicacion}")
-        reclamo = Reclamo(cedula=cedula, foto=ruta_imagen, ubicacion=ubicacion)
+        reclamo = Reclamo(
+            cedula=cedula,
+            foto=ruta_imagen,
+            ubicacion=ubicacion
+            )
+        
         agregar_reclamo(reclamo)
-        return {"mensaje": "Reclamo registrado"}
+
+        # Generar respuesta personalizada
+        respuesta = generar_respuesta_gpt(
+            f"El usuario con cédula {cedula} reportó un problema en {ubicacion}. "
+            "Generar mensaje de confirmación amigable que incluya la ubicación."
+        )
+        
+        return {
+            "mensaje": "Reclamo registrado",
+            "respuesta_chat": respuesta.content
+        }
     except Exception as e:
-        logger.exception("Error al guardar el reclamo")
         raise HTTPException(status_code=500, detail="Hubo un error al guardar el reclamo")
 
 @router.post("/nuevo_cliente")
