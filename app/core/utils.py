@@ -2,7 +2,6 @@ from fastapi import UploadFile
 import shutil
 from typing import Optional
 import re
-#from app.services.database import DATABASE_PATH
 
 def validar_cedula(cedula: int) -> bool:
     """
