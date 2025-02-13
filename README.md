@@ -65,7 +65,7 @@ streamlit run app/frontend/chat_interface.py --server.port 8501
 
 ## 🔧 Estructura del proyecto
 ```
-chatbotMunicipalBasura/
+chatbotMunicipioBasura/
 ├── app/
 │   ├── core/
 │   │   ├── config.py            # Variables de entorno (API keys)
