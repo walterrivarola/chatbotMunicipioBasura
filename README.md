@@ -4,9 +4,8 @@
 
 ## 🚀 Funcionalidades principales
 - Asistencia inteligente para consultas sobre gestión de residuos
-- Clasificación de residuos usando IA (GPT-4)
-- Generación de reportes y estadísticas
-- Sistema de preguntas frecuentes automatizado
+- Crear usuarios nuevos
+- Gestionar reclamos de basura
 
 ## 📋 Prerrequisitos
 - Python 3.9+
